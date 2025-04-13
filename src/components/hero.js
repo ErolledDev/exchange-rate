@@ -1,5 +1,6 @@
 import { fetchExchangeRates, convertCurrency } from '../api/exchangeApi.js';
 import { updateUrlParams } from '../utils/urlHandler.js';
+import { format } from 'date-fns';
 
 export function initializeHero() {
   const heroContainer = document.getElementById('hero-container');
@@ -11,12 +12,12 @@ export function initializeHero() {
         <p>Convert currencies with live exchange rates</p>
         
         <div class="converter-card">
+          <div class="last-update"></div>
           <div class="converter-form">
             <div class="input-group">
               <input type="number" id="amount" value="1" min="0" step="any">
               <select id="fromCurrency">
                 <option value="USD">USD</option>
-                <!-- Other options will be populated dynamically -->
               </select>
             </div>
             
@@ -26,7 +27,6 @@ export function initializeHero() {
               <input type="number" id="result" readonly>
               <select id="toCurrency">
                 <option value="EUR">EUR</option>
-                <!-- Other options will be populated dynamically -->
               </select>
             </div>
           </div>
@@ -49,51 +49,57 @@ async function initializeConverter() {
   const rateInfo = document.getElementById('rate-info');
   const swapButton = document.getElementById('swap-currencies');
   const convertButton = document.getElementById('convert');
+  const lastUpdate = document.querySelector('.last-update');
 
   try {
-    // Get exchange rates
-    const rates = await fetchExchangeRates();
+    // Initial fetch to get available currencies
+    const initialRates = await fetchExchangeRates();
     
-    // Clear existing options
-    fromCurrency.innerHTML = '';
-    toCurrency.innerHTML = '';
-    
-    // Ensure we have valid rates before proceeding
-    if (!rates || typeof rates !== 'object') {
+    if (!initialRates || !initialRates.rates || typeof initialRates.rates !== 'object') {
       throw new Error('Invalid exchange rates data');
     }
 
-    // Add currency options
-    Object.keys(rates).forEach(currency => {
+    // Clear and populate currency dropdowns
+    fromCurrency.innerHTML = '';
+    toCurrency.innerHTML = '';
+    
+    Object.keys(initialRates.rates).forEach(currency => {
       fromCurrency.add(new Option(currency, currency));
       toCurrency.add(new Option(currency, currency));
     });
+    
+    // Add base currency since it's not in the rates
+    fromCurrency.add(new Option(initialRates.base, initialRates.base));
+    toCurrency.add(new Option(initialRates.base, initialRates.base));
 
     // Set default values
-    fromCurrency.value = 'USD';
-    toCurrency.value = 'EUR';
+    fromCurrency.value = initialRates.base;
+    toCurrency.value = Object.keys(initialRates.rates)[0];
 
-    // Handle conversion
     async function performConversion() {
       try {
-        const currentRates = await fetchExchangeRates();
-        if (!currentRates || typeof currentRates !== 'object') {
+        const currentRates = await fetchExchangeRates(fromCurrency.value);
+        
+        if (!currentRates || !currentRates.rates || typeof currentRates.rates !== 'object') {
           throw new Error('Invalid exchange rates data');
         }
 
-        const fromRate = currentRates[fromCurrency.value] || 1;
-        const toRate = currentRates[toCurrency.value] || 1;
+        const toRate = currentRates.rates[toCurrency.value];
         
+        if (toRate === undefined && toCurrency.value !== currentRates.base) {
+          throw new Error(`Exchange rate not available for ${toCurrency.value}`);
+        }
+
         const convertedAmount = convertCurrency(
           parseFloat(amount.value) || 0,
-          fromRate,
-          toRate
+          1, // Base currency rate is always 1
+          toCurrency.value === currentRates.base ? 1 : toRate
         );
         
         result.value = convertedAmount.toFixed(2);
-        rateInfo.textContent = `1 ${fromCurrency.value} = ${(toRate / fromRate).toFixed(4)} ${toCurrency.value}`;
+        rateInfo.textContent = `1 ${fromCurrency.value} = ${(toCurrency.value === currentRates.base ? 1 : toRate).toFixed(4)} ${toCurrency.value}`;
+        lastUpdate.textContent = `Last updated: ${format(new Date(currentRates.date), 'PPP')}`;
         
-        // Update URL parameters
         updateUrlParams({
           amount: amount.value,
           from: fromCurrency.value,
@@ -101,12 +107,18 @@ async function initializeConverter() {
         });
       } catch (error) {
         console.error('Conversion error:', error);
-        rateInfo.textContent = 'Error performing conversion. Please try again.';
+        rateInfo.textContent = error.message || 'Error performing conversion. Please try again.';
+        result.value = '';
+        lastUpdate.textContent = '';
       }
     }
 
     // Event listeners
     convertButton.addEventListener('click', performConversion);
+    amount.addEventListener('input', performConversion);
+    fromCurrency.addEventListener('change', performConversion);
+    toCurrency.addEventListener('change', performConversion);
+    
     swapButton.addEventListener('click', () => {
       const temp = fromCurrency.value;
       fromCurrency.value = toCurrency.value;
@@ -115,9 +127,10 @@ async function initializeConverter() {
     });
 
     // Initial conversion
-    performConversion();
+    await performConversion();
   } catch (error) {
     console.error('Initialization error:', error);
-    rateInfo.textContent = 'Error loading exchange rates. Please refresh the page.';
+    rateInfo.textContent = error.message || 'Error loading exchange rates. Please refresh the page.';
+    lastUpdate.textContent = '';
   }
 }

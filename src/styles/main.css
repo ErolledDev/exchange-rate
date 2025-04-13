@@ -57,6 +57,13 @@ body {
   margin: 0 auto;
 }
 
+.last-update {
+  color: var(--text-color);
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+  text-align: right;
+}
+
 .converter-form {
   display: flex;
   align-items: center;
@@ -91,6 +98,11 @@ select {
   font-size: 1.5rem;
   cursor: pointer;
   color: var(--primary-color);
+  transition: transform 0.2s;
+}
+
+.swap-btn:hover {
+  transform: scale(1.1);
 }
 
 .convert-btn {
@@ -131,5 +143,9 @@ select {
   
   .swap-btn {
     transform: rotate(90deg);
+  }
+  
+  .swap-btn:hover {
+    transform: rotate(90deg) scale(1.1);
   }
 }
